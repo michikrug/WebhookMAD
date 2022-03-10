@@ -49,7 +49,7 @@ def parse_data(data: dict):
     for messages in data:
         if messages.get("type") == "pokemon":
             mon = messages.get("message", None)
-            if mon is None:
+            if mon is None or mon.get("spawnpoint_id", 0) == 0:
                 continue
 
             mon_args.append(
@@ -76,7 +76,7 @@ def parse_data(data: dict):
                     mon.get("ultra_catch", None),
                     None,
                     None,
-                    mon.get("boosted_weather", None),
+                    mon.get("boosted_weather", mon.get("weather", None)),
                     now,
                     mon.get("costume", None),
                     mon.get("form", None),
