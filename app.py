@@ -20,17 +20,20 @@ app = Flask(__name__)
 
 conn = None
 
-try:
-    conn = mysql.connector.connect(**db_config)
-except mysql.connector.Error as err:
-    if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-        logging.error("Something is wrong with your user name or password")
-    elif err.errno == errorcode.ER_BAD_DB_ERROR:
-        logging.error("Database does not exist")
-    else:
-        logging.error(err)
 
-    exit(1)
+def connect_db():
+    global conn
+    try:
+        conn = mysql.connector.connect(**db_config)
+    except mysql.connector.Error as err:
+        if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+            logging.error("Something is wrong with your user name or password")
+        elif err.errno == errorcode.ER_BAD_DB_ERROR:
+            logging.error("Database does not exist")
+        else:
+            logging.error(err)
+
+        exit(1)
 
 
 @app.route('/webhook/<secret>', methods=['POST'])
@@ -119,6 +122,9 @@ def execute_query(query: str, args: tuple = None):
         conn.commit()
     except mysql.connector.Error as err:
         logging.error("Failed executing query: %s" % str(err))
+        if err.errno == errorcode.CR_CONNECTION_ERROR:
+            connect_db()
+            execute_query(query, args)
     except Exception as e:
         logging.error("Unspecified exception in dbWrapper: %s" % str(e))
     finally:
@@ -127,4 +133,5 @@ def execute_query(query: str, args: tuple = None):
     return None
 
 
+connect_db()
 app.run(host='127.0.0.1', port=8088)
