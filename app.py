@@ -115,16 +115,16 @@ def execute_query(query: str, args: tuple = None):
     if not args or not conn:
         return None
 
-    cursor = conn.cursor()
-
     try:
+        cursor = conn.cursor()
         cursor.executemany(query, args)
         conn.commit()
+    except mysql.connector.OperationalError as err:
+        logging.error("Creating cursor: %s\nTrying reconnect..." % str(err))
+        connect_db()
+        execute_query(query, args)
     except mysql.connector.Error as err:
         logging.error("Failed executing query: %s" % str(err))
-        if err.errno == errorcode.CR_CONNECTION_ERROR:
-            connect_db()
-            execute_query(query, args)
     except Exception as e:
         logging.error("Unspecified exception in dbWrapper: %s" % str(e))
     finally:
