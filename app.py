@@ -1,22 +1,23 @@
 import logging
 import os
+import queue
 import random
 import time
 from datetime import datetime, timezone
+from queue import Queue
+from threading import Thread
 from typing import Dict, List, Optional, Tuple
 
 from flask import Flask, Response, request
 from mysql.connector import Error, errorcode
 from mysql.connector.pooling import MySQLConnectionPool
 
-# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Load configuration from environment variables
 db_config = {
     'user': os.getenv('DB_USER', 'user'),
     'password': os.getenv('DB_PASSWORD', 'password'),
@@ -32,13 +33,31 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'secret')
 
 pool: Optional[MySQLConnectionPool] = None
+query_queue = Queue(maxsize=1000)
 
+query = (
+    "INSERT INTO pokemon (encounter_id, spawnpoint_id, pokemon_id, latitude, longitude, disappear_time, "
+    "individual_attack, individual_defense, individual_stamina, move_1, move_2, cp, cp_multiplier, "
+    "weight, height, gender, catch_prob_1, catch_prob_2, catch_prob_3, rating_attack, rating_defense, "
+    "weather_boosted_condition, last_modified, costume, form, size, seen_type"
+    ") VALUES ("
+    "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s"
+    ") ON DUPLICATE KEY UPDATE "
+    "last_modified=VALUES(last_modified), disappear_time=VALUES(disappear_time), "
+    "individual_attack=VALUES(individual_attack), individual_defense=VALUES(individual_defense), "
+    "individual_stamina=VALUES(individual_stamina), move_1=VALUES(move_1), move_2=VALUES(move_2), "
+    "cp=VALUES(cp), cp_multiplier=VALUES(cp_multiplier), weight=VALUES(weight), height=VALUES(height), "
+    "gender=VALUES(gender), catch_prob_1=VALUES(catch_prob_1), catch_prob_2=VALUES(catch_prob_2), "
+    "catch_prob_3=VALUES(catch_prob_3), rating_attack=VALUES(rating_attack), "
+    "rating_defense=VALUES(rating_defense), weather_boosted_condition=VALUES(weather_boosted_condition), "
+    "costume=VALUES(costume), form=VALUES(form), size=VALUES(size), pokemon_id=VALUES(pokemon_id), latitude=VALUES(latitude), "
+    "longitude=VALUES(longitude), spawnpoint_id=VALUES(spawnpoint_id), seen_type=VALUES(seen_type)"
+)
 
 def init_db_pool() -> None:
-    """Initialize the database connection pool."""
     global pool
     try:
-        pool = MySQLConnectionPool(pool_name="mypool", pool_size=5, **db_config)
+        pool = MySQLConnectionPool(pool_name="mypool", pool_size=3, **db_config)
         logger.info("Database pool initialized successfully.")
     except Error as err:
         error_message = "Unknown error"
@@ -49,9 +68,7 @@ def init_db_pool() -> None:
         logger.error(f"Database initialization error: {error_message}")
         raise
 
-
 def get_db_connection():
-    """Retrieve a connection from the pool with retry logic."""
     global pool
     if pool is None:
         init_db_pool()
@@ -60,21 +77,11 @@ def get_db_connection():
         return pool.get_connection()
     except Error as e:
         logger.error(f"Error getting connection from pool: {e}")
-        pool = None  # Reset pool for reinitialization
+        pool = None
         raise
-
-
-@app.before_request
-def setup() -> None:
-    """Setup database connection pool before handling requests."""
-    global pool
-    if pool is None:
-        init_db_pool()
-
 
 @app.route('/webhook/<secret>', methods=['POST'])
 def webhook(secret: str) -> Tuple[str | Response, int]:
-    """Handle incoming webhook requests."""
     if secret != WEBHOOK_SECRET:
         logger.warning(f"Invalid webhook secret attempted: {secret}")
         return 'Invalid request', 403
@@ -89,16 +96,15 @@ def webhook(secret: str) -> Tuple[str | Response, int]:
         logger.error(f"Unexpected error processing webhook: {e}")
         return 'Internal server error', 500
 
-def calculate_mon_level(cp_multiplier):
+def calculate_mon_level(cp_multiplier: float) -> float:
     if cp_multiplier < 0.734:
         pokemon_level = 58.35178527 * cp_multiplier * \
             cp_multiplier - 2.838007664 * cp_multiplier + 0.8539209906
     else:
         pokemon_level = 171.0112688 * cp_multiplier - 95.20425243
-    return round(pokemon_level) * 2 / 2
+    return round(pokemon_level * 2) / 2
 
-
-def calculate_cp_multiplier(target_pokemon_level):
+def calculate_cp_multiplier(target_pokemon_level: float) -> Optional[float]:
     cp_multiplier = 0.4
     for _ in range(100):  # Limit iterations to avoid infinite loops
         pokemon_level = calculate_mon_level(cp_multiplier)
@@ -111,13 +117,12 @@ def calculate_cp_multiplier(target_pokemon_level):
     return None  # No solution found within tolerance
 
 def parse_data(data: List[Dict]) -> None:
-    """Parse incoming data and insert it into the database."""
     mon_args = []
 
     for message in data:
         if message.get("type") != "pokemon":
             continue
-            
+
         mon = message.get("message")
         if not mon or not mon.get("spawnpoint_id"):
             continue
@@ -161,50 +166,46 @@ def parse_data(data: List[Dict]) -> None:
             logger.error(f"Error processing pokemon data: {e}")
             continue
 
-    logger.info("Preparing to insert %d records", len(mon_args))
-
-    query = (
-        "INSERT INTO pokemon (encounter_id, spawnpoint_id, pokemon_id, latitude, longitude, disappear_time, "
-        "individual_attack, individual_defense, individual_stamina, move_1, move_2, cp, cp_multiplier, "
-        "weight, height, gender, catch_prob_1, catch_prob_2, catch_prob_3, rating_attack, rating_defense, "
-        "weather_boosted_condition, last_modified, costume, form, size, seen_type"
-        ") VALUES ("
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s"
-        ") ON DUPLICATE KEY UPDATE "
-        "last_modified=VALUES(last_modified), disappear_time=VALUES(disappear_time), "
-        "individual_attack=VALUES(individual_attack), individual_defense=VALUES(individual_defense), "
-        "individual_stamina=VALUES(individual_stamina), move_1=VALUES(move_1), move_2=VALUES(move_2), "
-        "cp=VALUES(cp), cp_multiplier=VALUES(cp_multiplier), weight=VALUES(weight), height=VALUES(height), "
-        "gender=VALUES(gender), catch_prob_1=VALUES(catch_prob_1), catch_prob_2=VALUES(catch_prob_2), "
-        "catch_prob_3=VALUES(catch_prob_3), rating_attack=VALUES(rating_attack), "
-        "rating_defense=VALUES(rating_defense), weather_boosted_condition=VALUES(weather_boosted_condition), "
-        "costume=VALUES(costume), form=VALUES(form), size=VALUES(size), pokemon_id=VALUES(pokemon_id), latitude=VALUES(latitude), "
-        "longitude=VALUES(longitude), spawnpoint_id=VALUES(spawnpoint_id), seen_type=VALUES(seen_type)"
-    )
-
     if mon_args:
-        execute_query(query, mon_args)
+        try:
+            query_queue.put(mon_args, timeout=5)
+            logger.info(f"Queued batch of {len(mon_args)} records")
+        except queue.Full:
+            logger.error("Queue is full, dropping batch")
+        except Exception as e:
+            logger.error(f"Error queuing query: {e}")
 
-
-def execute_query(query: str, args: List[Tuple]) -> None:
-    """Execute a database query with provided arguments."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.executemany(query, args)
-        conn.commit()
-    except Error as err:
-        logger.error(f"Database error: {err}")
-        if conn:
-            conn.rollback()
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
+def query_worker() -> None:
+    while True:
+        try:
+            args = query_queue.get(timeout=30)
+            conn = None
+            cursor = None
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.executemany(query, args)
+                conn.commit()
+                logger.info(f"Processed batch of {len(args)} records")
+            except Error as err:
+                logger.error(f"Database error in worker: {err}")
+                if conn:
+                    conn.rollback()
+            except Exception as e:
+                logger.error(f"Unexpected error in worker: {e}")
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+                query_queue.task_done()
+        except queue.Empty:
+            continue
+        except Exception as e:
+            logger.error(f"Worker thread error: {e}")
 
 if __name__ == '__main__':
+    init_db_pool()
+    worker = Thread(target=query_worker, daemon=True)
+    worker.start()
     app.run(host='0.0.0.0', port=8000)
