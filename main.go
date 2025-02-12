@@ -58,8 +58,8 @@ type EncounterData struct {
 }
 
 type WebhookData struct {
-	messageType string        `json:"type"`
-	message     EncounterData `json:"message"`
+	MessageType string        `json:"type"`
+	Message     EncounterData `json:"message"`
 }
 
 func (EncounterData) TableName() string {
@@ -124,10 +124,10 @@ func webhookHandler(c *gin.Context) {
 
 	currentTime := int(time.Now().Unix())
 	for i := range webhookdata {
-		if webhookdata[i].messageType != "pokemon" {
+		if webhookdata[i].MessageType != "pokemon" {
 			continue
 		}
-		encounter := webhookdata[i].message
+		encounter := webhookdata[i].Message
 		if encounter.SpawnIDString != "" {
 			spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64)
 			if err == nil {
