@@ -57,6 +57,10 @@ type EncounterData struct {
 	IV                      *float32
 }
 
+func (EncounterData) TableName() string {
+	return "pokemon"
+}
+
 var (
 	db            *gorm.DB
 	queue         = make(chan []EncounterData, 1000)
@@ -113,12 +117,13 @@ func webhookHandler(c *gin.Context) {
 
 	currentTime := int(time.Now().Unix())
 	for i := range encounters {
-		spawnID, err := strconv.ParseInt(encounters[i].SpawnIDString, 16, 64)
-		if err == nil {
-			encounters[i].SpawnID = &spawnID
-		} else {
-			log.Printf("Failed to convert spawnID %s: %v", encounters[i].SpawnIDString, err)
-			encounters[i].SpawnID = nil
+		if encounters[i].SpawnIDString != "" {
+			spawnID, err := strconv.ParseInt(encounters[i].SpawnIDString, 16, 64)
+			if err == nil {
+				encounters[i].SpawnID = &spawnID
+			} else {
+				log.Printf("Failed to convert spawnID %s: %v", encounters[i].SpawnIDString, err)
+			}
 		}
 
 		encounters[i].Updated = &currentTime
