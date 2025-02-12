@@ -139,6 +139,10 @@ func webhookHandler(c *gin.Context) {
 
 		encounter.Updated = &currentTime
 
+		// Clear empty fields
+		if *encounter.PokestopID == "None" {
+			encounter.PokestopID = nil
+		}
 		if *encounter.Capture1 == 0 {
 			encounter.Capture1 = nil
 		}
