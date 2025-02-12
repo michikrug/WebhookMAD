@@ -139,6 +139,16 @@ func webhookHandler(c *gin.Context) {
 
 		encounter.Updated = &currentTime
 
+		if *encounter.Capture1 == 0 {
+			encounter.Capture1 = nil
+		}
+		if *encounter.Capture2 == 0 {
+			encounter.Capture2 = nil
+		}
+		if *encounter.Capture3 == 0 {
+			encounter.Capture3 = nil
+		}
+
 		if encounter.AtkIV != nil && encounter.DefIV != nil && encounter.StaIV != nil {
 			iv := float32((*encounter.AtkIV+*encounter.DefIV+*encounter.StaIV)*100) / 45.0
 			encounter.IV = &iv
