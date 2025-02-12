@@ -30,7 +30,7 @@ type EncounterData struct {
 	Size                    *int     `json:"size"`
 	Height                  *float32 `json:"height"`
 	ExpireTimestamp         *int     `json:"disappear_time"`
-	Updated                 *int
+	Updated                 *int     `json:"updated"`
 	PokemonID               int      `json:"pokemon_id"`
 	Move1                   *int     `json:"move_1" gorm:"column:move_1"`
 	Move2                   *int     `json:"move_2" gorm:"column:move_2"`
@@ -40,7 +40,7 @@ type EncounterData struct {
 	DefIV                   *int     `json:"individual_defense"`
 	StaIV                   *int     `json:"individual_stamina"`
 	Form                    *int     `json:"form"`
-	Level                   *int     `json:"level"`
+	Level                   *int     `json:"pokemon_level"`
 	Weather                 *int     `json:"weather"`
 	Costume                 *int     `json:"costume"`
 	FirstSeenTimestamp      int      `json:"first_seen"`
