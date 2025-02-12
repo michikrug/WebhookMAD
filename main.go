@@ -21,42 +21,43 @@ import (
 )
 
 type EncounterData struct {
-	ID                      string   `json:"encounter_id" gorm:"primaryKey"`
-	PokestopID              *string  `json:"pokestop_id"`
-	SpawnIDString           string   `json:"spawnpoint_id" gorm:"-"` // Temporary field for JSON decoding
-	SpawnID                 *int64   `json:"spawn_id"`
-	Lat                     float32  `json:"latitude"`
-	Lon                     float32  `json:"longitude"`
-	Weight                  *float32 `json:"weight"`
-	Size                    *int     `json:"size"`
-	Height                  *float32 `json:"height"`
-	ExpireTimestamp         *int     `json:"disappear_time"`
-	Updated                 *int     `json:"updated"`
-	PokemonID               int      `json:"pokemon_id"`
-	Move1                   *int     `json:"move_1" gorm:"column:move_1"`
-	Move2                   *int     `json:"move_2" gorm:"column:move_2"`
-	Gender                  *int     `json:"gender"`
-	CP                      *int     `json:"cp"`
-	AtkIV                   *int     `json:"individual_attack"`
-	DefIV                   *int     `json:"individual_defense"`
-	StaIV                   *int     `json:"individual_stamina"`
-	Form                    *int     `json:"form"`
-	Level                   *int     `json:"pokemon_level"`
-	Weather                 *int     `json:"weather"`
-	Costume                 *int     `json:"costume"`
-	FirstSeenTimestamp      int      `json:"first_seen"`
-	Changed                 int      `json:"last_modified_time"`
-	ExpireTimestampVerified bool     `json:"disappear_time_verified"`
-	DisplayPokemonID        *int     `json:"display_pokemon_id"`
-	SeenType                *string  `json:"seen_type"`
-	Shiny                   *bool    `json:"shiny"`
-	Username                *string  `json:"username"`
-	Capture1                *float32 `json:"capture_1" gorm:"column:capture_1"`
-	Capture2                *float32 `json:"capture_2" gorm:"column:capture_2"`
-	Capture3                *float32 `json:"capture_3" gorm:"column:capture_3"`
-	PVP                     *string  `json:"pvp"`
-	IsEvent                 int      `json:"is_event"`
-	IV                      *float32 `json:"iv"`
+	ID                      string           `json:"encounter_id" gorm:"primaryKey"`
+	PokestopID              *string          `json:"pokestop_id"`
+	SpawnIDString           string           `json:"spawnpoint_id" gorm:"-"` // Temporary field for JSON decoding
+	SpawnID                 *int64           `json:"spawn_id"`
+	Lat                     float32          `json:"latitude"`
+	Lon                     float32          `json:"longitude"`
+	Weight                  *float32         `json:"weight"`
+	Size                    *int             `json:"size"`
+	Height                  *float32         `json:"height"`
+	ExpireTimestamp         *int             `json:"disappear_time"`
+	Updated                 *int             `json:"updated"`
+	PokemonID               int              `json:"pokemon_id"`
+	Move1                   *int             `json:"move_1" gorm:"column:move_1"`
+	Move2                   *int             `json:"move_2" gorm:"column:move_2"`
+	Gender                  *int             `json:"gender"`
+	CP                      *int             `json:"cp"`
+	AtkIV                   *int             `json:"individual_attack"`
+	DefIV                   *int             `json:"individual_defense"`
+	StaIV                   *int             `json:"individual_stamina"`
+	Form                    *int             `json:"form"`
+	Level                   *int             `json:"pokemon_level"`
+	Weather                 *int             `json:"weather"`
+	Costume                 *int             `json:"costume"`
+	FirstSeenTimestamp      int              `json:"first_seen"`
+	Changed                 int              `json:"last_modified_time"`
+	ExpireTimestampVerified bool             `json:"disappear_time_verified"`
+	DisplayPokemonID        *int             `json:"display_pokemon_id"`
+	SeenType                *string          `json:"seen_type"`
+	Shiny                   *bool            `json:"shiny"`
+	Username                *string          `json:"username"`
+	Capture1                *float32         `json:"capture_1" gorm:"column:capture_1"`
+	Capture2                *float32         `json:"capture_2" gorm:"column:capture_2"`
+	Capture3                *float32         `json:"capture_3" gorm:"column:capture_3"`
+	PVPJson                 *json.RawMessage `json:"pvp" gorm:"-"`
+	PVP                     *string          `json:"-"`
+	IsEvent                 int              `json:"is_event"`
+	IV                      *float32         `json:"iv"`
 }
 
 type WebhookMessage struct {
@@ -156,6 +157,8 @@ func webhookHandler(c *gin.Context) {
 			continue
 		}
 
+		encounter.Updated = &currentTime
+
 		// Convert the spawn ID from hex to int64
 		if spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64); err == nil {
 			encounter.SpawnID = &spawnID
@@ -163,7 +166,12 @@ func webhookHandler(c *gin.Context) {
 			log.Printf("Failed to convert spawnID %s: %v", encounter.SpawnIDString, err)
 		}
 
-		encounter.Updated = &currentTime
+		if encounter.PVPJson != nil {
+			tmp := string(*encounter.PVPJson)
+			encounter.PVP = &tmp
+		} else {
+			encounter.PVP = nil
+		}
 
 		// Clear empty fields safely (check for nil pointers)
 		if encounter.PokestopID != nil && *encounter.PokestopID == "None" {
@@ -184,20 +192,22 @@ func webhookHandler(c *gin.Context) {
 			iv := float32((*encounter.AtkIV+*encounter.DefIV+*encounter.StaIV)*100) / 45.0
 			encounter.IV = &iv
 
-			// Query PvP rank if all IVs are present
-			pvp, err := ohbem.QueryPvPRank(int(encounter.PokemonID),
-				valueOrZeroInt(encounter.Form),
-				valueOrZeroInt(encounter.Costume),
-				valueOrZeroInt(encounter.Gender),
-				valueOrZeroInt(encounter.AtkIV),
-				valueOrZeroInt(encounter.DefIV),
-				valueOrZeroInt(encounter.StaIV),
-				float64(valueOrZeroInt(encounter.Level)))
+			if encounter.PVP == nil || *encounter.PVP == "" {
+				// Query PvP rank if not already done
+				pvp, err := ohbem.QueryPvPRank(int(encounter.PokemonID),
+					valueOrZeroInt(encounter.Form),
+					valueOrZeroInt(encounter.Costume),
+					valueOrZeroInt(encounter.Gender),
+					valueOrZeroInt(encounter.AtkIV),
+					valueOrZeroInt(encounter.DefIV),
+					valueOrZeroInt(encounter.StaIV),
+					float64(valueOrZeroInt(encounter.Level)))
 
-			if err == nil {
-				pvpBytes, _ := json.Marshal(pvp)
-				tmp := string(pvpBytes)
-				encounter.PVP = &tmp
+				if err == nil {
+					pvpBytes, _ := json.Marshal(pvp)
+					tmp := string(pvpBytes)
+					encounter.PVP = &tmp
+				}
 			}
 		}
 
