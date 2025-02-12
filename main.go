@@ -59,9 +59,9 @@ type EncounterData struct {
 	IV                      *float32 `json:"iv"`
 }
 
-type WebhookData struct {
-	MessageType string        `json:"type"`
-	Message     EncounterData `json:"message"`
+type WebhookMessage struct {
+	Type    string        `json:"type"`
+	Message EncounterData `json:"message"`
 }
 
 func (EncounterData) TableName() string {
@@ -142,17 +142,17 @@ func webhookHandler(c *gin.Context) {
 
 	var encounters []EncounterData
 
-	var webhookdata []WebhookData
-	if err := json.Unmarshal(data, &webhookdata); err != nil {
+	var webhookMessages []WebhookMessage
+	if err := json.Unmarshal(data, &webhookMessages); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
 		return
 	}
 
 	currentTime := int(time.Now().Unix())
-	for _, webhookEntry := range webhookdata {
-		encounter := webhookEntry.Message
+	for _, webhookMessage := range webhookMessages {
+		encounter := webhookMessage.Message
 
-		if webhookEntry.MessageType != "pokemon" || encounter.SpawnIDString == "" {
+		if webhookMessage.Type != "pokemon" || encounter.SpawnIDString == "" {
 			continue
 		}
 
@@ -237,6 +237,7 @@ func initializeOhbem() {
 	}
 	o.WatchPokemonData()
 	ohbem = o
+	log.Println("Ohbem initialized")
 }
 
 func queryWorker() {
