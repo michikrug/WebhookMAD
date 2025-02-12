@@ -123,14 +123,16 @@ func webhookHandler(c *gin.Context) {
 	}
 
 	currentTime := int(time.Now().Unix())
-	for i := range webhookdata {
-		if webhookdata[i].MessageType != "pokemon" {
+	for _, webhookEntry := range webhookdata {
+		if webhookEntry.MessageType != "pokemon" {
 			continue
 		}
-		encounter := webhookdata[i].Message
+
+		encounter := webhookEntry.Message
+
+		// Convert the spawn ID from hex to int64
 		if encounter.SpawnIDString != "" {
-			spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64)
-			if err == nil {
+			if spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64); err == nil {
 				encounter.SpawnID = &spawnID
 			} else {
 				log.Printf("Failed to convert spawnID %s: %v", encounter.SpawnIDString, err)
@@ -139,24 +141,26 @@ func webhookHandler(c *gin.Context) {
 
 		encounter.Updated = &currentTime
 
-		// Clear empty fields
-		if *encounter.PokestopID == "None" {
+		// Clear empty fields safely (check for nil pointers)
+		if encounter.PokestopID != nil && *encounter.PokestopID == "None" {
 			encounter.PokestopID = nil
 		}
-		if *encounter.Capture1 == 0 {
+		if encounter.Capture1 != nil && *encounter.Capture1 == 0 {
 			encounter.Capture1 = nil
 		}
-		if *encounter.Capture2 == 0 {
+		if encounter.Capture2 != nil && *encounter.Capture2 == 0 {
 			encounter.Capture2 = nil
 		}
-		if *encounter.Capture3 == 0 {
+		if encounter.Capture3 != nil && *encounter.Capture3 == 0 {
 			encounter.Capture3 = nil
 		}
 
+		// Calculate IV if all individual values are present
 		if encounter.AtkIV != nil && encounter.DefIV != nil && encounter.StaIV != nil {
 			iv := float32((*encounter.AtkIV+*encounter.DefIV+*encounter.StaIV)*100) / 45.0
 			encounter.IV = &iv
 		}
+
 		encounters = append(encounters, encounter)
 	}
 
