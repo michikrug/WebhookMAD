@@ -20,41 +20,41 @@ import (
 )
 
 type EncounterData struct {
-	ID                      string  `gorm:"primaryKey" json:"encounter_id"`
-	PokestopID              *string `json:"pokestop_id"`
-	SpawnIDString           string  `gorm:"-" json:"spawnpoint_id"` // Temporary field for JSON decoding
-	SpawnID                 *int64
-	Lat                     float32 `json:"latitude"`
-	Lon                     float32 `json:"longitude"`
-	Weight                  *float32
-	Size                    *int
-	Height                  *float32
-	ExpireTimestamp         *int `json:"disappear_time"`
-	Updated                 *int
-	PokemonID               int
-	Move1                   *int `gorm:"column:move_1" json:"move_1"`
-	Move2                   *int `gorm:"column:move_2" json:"move_2"`
-	Gender                  *int
-	CP                      *int
-	AtkIV                   *int `json:"individual_attack"`
-	DefIV                   *int `json:"individual_defense"`
-	StaIV                   *int `json:"individual_stamina"`
-	Form                    *int
-	Level                   *int
-	Weather                 *int
-	Costume                 *int
-	FirstSeenTimestamp      int  `json:"first_seen"`
-	Changed                 int  `json:"last_modified_time"`
-	ExpireTimestampVerified bool `json:"disappear_time_verified"`
-	DisplayPokemonID        *int
-	SeenType                *string
-	Shiny                   *bool
-	Username                *string
-	Capture1                *float32 `gorm:"column:capture_1" json:"capture_1"`
-	Capture2                *float32 `gorm:"column:capture_2" json:"capture_2"`
-	Capture3                *float32 `gorm:"column:capture_3" json:"capture_3"`
-	IsEvent                 int
-	IV                      *float32
+	ID                      string   `json:"encounter_id" gorm:"primaryKey"`
+	PokestopID              *string  `json:"pokestop_id"`
+	SpawnIDString           string   `json:"spawnpoint_id" gorm:"-"` // Temporary field for JSON decoding
+	SpawnID                 *int64   `json:"spawn_id"`
+	Lat                     float32  `json:"latitude"`
+	Lon                     float32  `json:"longitude"`
+	Weight                  *float32 `json:"weight"`
+	Size                    *int     `json:"size"`
+	Height                  *float32 `json:"height"`
+	ExpireTimestamp         *int     `json:"disappear_time"`
+	Updated                 *int     `json:"last_modified_time"`
+	PokemonID               int      `json:"pokemon_id"`
+	Move1                   *int     `json:"move_1" gorm:"column:move_1"`
+	Move2                   *int     `json:"move_2" gorm:"column:move_2"`
+	Gender                  *int     `json:"gender"`
+	CP                      *int     `json:"cp"`
+	AtkIV                   *int     `json:"individual_attack"`
+	DefIV                   *int     `json:"individual_defense"`
+	StaIV                   *int     `json:"individual_stamina"`
+	Form                    *int     `json:"form"`
+	Level                   *int     `json:"level"`
+	Weather                 *int     `json:"weather"`
+	Costume                 *int     `json:"costume"`
+	FirstSeenTimestamp      int      `json:"first_seen"`
+	Changed                 int      `json:"last_modified_time"`
+	ExpireTimestampVerified bool     `json:"disappear_time_verified"`
+	DisplayPokemonID        *int     `json:"display_pokemon_id"`
+	SeenType                *string  `json:"seen_type"`
+	Shiny                   *bool    `json:"shiny"`
+	Username                *string  `json:"username"`
+	Capture1                *float32 `json:"capture_1" gorm:"column:capture_1"`
+	Capture2                *float32 `json:"capture_2" gorm:"column:capture_2"`
+	Capture3                *float32 `json:"capture_3" gorm:"column:capture_3"`
+	IsEvent                 int      `json:"is_event"`
+	IV                      *float32 `json:"iv"`
 }
 
 func (EncounterData) TableName() string {
