@@ -26,5 +26,7 @@ COPY --from=builder /app/webhook .
 
 USER nobody
 
+COPY *.json ./
+
 # Run the webhook
 ENTRYPOINT ["/app/webhook"]

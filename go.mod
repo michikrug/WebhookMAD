@@ -3,6 +3,7 @@ module WebhookMAD
 go 1.23.5
 
 require (
+	github.com/UnownHash/gohbem v0.12.0
 	github.com/gin-gonic/gin v1.10.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12

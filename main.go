@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/UnownHash/gohbem"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -53,6 +54,7 @@ type EncounterData struct {
 	Capture1                *float32 `json:"capture_1" gorm:"column:capture_1"`
 	Capture2                *float32 `json:"capture_2" gorm:"column:capture_2"`
 	Capture3                *float32 `json:"capture_3" gorm:"column:capture_3"`
+	PVP                     *string  `json:"pvp"`
 	IsEvent                 int      `json:"is_event"`
 	IV                      *float32 `json:"iv"`
 }
@@ -71,7 +73,32 @@ var (
 	queue         = make(chan []EncounterData, 1000)
 	webhookSecret = os.Getenv("WEBHOOK_SECRET")
 	pokeAlarmURL  = os.Getenv("POKEALARM_URL")
+	leagues       = map[string]gohbem.League{
+		"little": {
+			Cap:            500,
+			LittleCupRules: false,
+		},
+		"great": {
+			Cap:            1500,
+			LittleCupRules: false,
+		},
+		"ultra": {
+			Cap:            2500,
+			LittleCupRules: false,
+		},
+	}
+	levelCaps         = []int{50, 51}
+	cacheFileLocation = os.Getenv("MASTERFILE_CACHE_PATH")
+	ohbem             *gohbem.Ohbem
 )
+
+// valueOrZeroInt safely returns the value of an *int or 0 if nil.
+func valueOrZeroInt(ptr *int) int {
+	if ptr != nil {
+		return *ptr
+	}
+	return 0
+}
 
 func initDB() {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
@@ -95,7 +122,6 @@ func sendToPokeAlarm(data []byte) {
 			return
 		}
 		defer resp.Body.Close()
-		log.Printf("Forwarded data to PokeAlarm with status: %d", resp.StatusCode)
 	}()
 }
 
@@ -124,19 +150,17 @@ func webhookHandler(c *gin.Context) {
 
 	currentTime := int(time.Now().Unix())
 	for _, webhookEntry := range webhookdata {
-		if webhookEntry.MessageType != "pokemon" {
+		encounter := webhookEntry.Message
+
+		if webhookEntry.MessageType != "pokemon" || encounter.SpawnIDString == "" {
 			continue
 		}
 
-		encounter := webhookEntry.Message
-
 		// Convert the spawn ID from hex to int64
-		if encounter.SpawnIDString != "" {
-			if spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64); err == nil {
-				encounter.SpawnID = &spawnID
-			} else {
-				log.Printf("Failed to convert spawnID %s: %v", encounter.SpawnIDString, err)
-			}
+		if spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64); err == nil {
+			encounter.SpawnID = &spawnID
+		} else {
+			log.Printf("Failed to convert spawnID %s: %v", encounter.SpawnIDString, err)
 		}
 
 		encounter.Updated = &currentTime
@@ -155,10 +179,26 @@ func webhookHandler(c *gin.Context) {
 			encounter.Capture3 = nil
 		}
 
-		// Calculate IV if all individual values are present
 		if encounter.AtkIV != nil && encounter.DefIV != nil && encounter.StaIV != nil {
+			// Calculate IV if all IVs are present
 			iv := float32((*encounter.AtkIV+*encounter.DefIV+*encounter.StaIV)*100) / 45.0
 			encounter.IV = &iv
+
+			// Query PvP rank if all IVs are present
+			pvp, err := ohbem.QueryPvPRank(int(encounter.PokemonID),
+				valueOrZeroInt(encounter.Form),
+				valueOrZeroInt(encounter.Costume),
+				valueOrZeroInt(encounter.Gender),
+				valueOrZeroInt(encounter.AtkIV),
+				valueOrZeroInt(encounter.DefIV),
+				valueOrZeroInt(encounter.StaIV),
+				float64(valueOrZeroInt(encounter.Level)))
+
+			if err == nil {
+				pvpBytes, _ := json.Marshal(pvp)
+				tmp := string(pvpBytes)
+				encounter.PVP = &tmp
+			}
 		}
 
 		encounters = append(encounters, encounter)
@@ -174,6 +214,31 @@ func webhookHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "success"})
 }
 
+func initializeOhbem() {
+	o := &gohbem.Ohbem{
+		Leagues:               leagues,
+		LevelCaps:             levelCaps,
+		IncludeHundosUnderCap: false,
+		DisableCache:          false,
+		MasterFileCachePath:   cacheFileLocation,
+	}
+	o.RankingComparator = gohbem.RankingComparatorPreferHigherCp
+	if err := o.FetchPokemonData(); err != nil {
+		if err2 := o.LoadPokemonData(cacheFileLocation); err2 != nil {
+			_ = o.LoadPokemonData("master-latest-basics.json")
+			log.Printf("ohbem.FetchPokemonData failed. ohbem.LoadPokemonData from cache failed: %s. Loading from master-latest-basics.json instead.", err2)
+		} else {
+			log.Printf("ohbem.FetchPokemonData failed, loaded from cache: %s", err)
+		}
+	}
+
+	if o.PokemonData.Initialized == true {
+		_ = o.SavePokemonData(cacheFileLocation)
+	}
+	o.WatchPokemonData()
+	ohbem = o
+}
+
 func queryWorker() {
 	for batch := range queue {
 		if err := db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&batch).Error; err != nil {
@@ -186,8 +251,10 @@ func queryWorker() {
 
 func main() {
 	initDB()
+	initializeOhbem()
 	go queryWorker()
 
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.POST("/webhook/:secret", webhookHandler)
 	srv := &http.Server{Addr: ":8000", Handler: r}
