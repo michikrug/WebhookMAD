@@ -30,7 +30,7 @@ type EncounterData struct {
 	Size                    *int     `json:"size"`
 	Height                  *float32 `json:"height"`
 	ExpireTimestamp         *int     `json:"disappear_time"`
-	Updated                 *int     `json:"last_modified_time"`
+	Updated                 *int
 	PokemonID               int      `json:"pokemon_id"`
 	Move1                   *int     `json:"move_1" gorm:"column:move_1"`
 	Move2                   *int     `json:"move_2" gorm:"column:move_2"`
@@ -55,6 +55,11 @@ type EncounterData struct {
 	Capture3                *float32 `json:"capture_3" gorm:"column:capture_3"`
 	IsEvent                 int      `json:"is_event"`
 	IV                      *float32 `json:"iv"`
+}
+
+type WebhookData struct {
+	messageType string        `json:"type"`
+	message     EncounterData `json:"message"`
 }
 
 func (EncounterData) TableName() string {
@@ -110,28 +115,35 @@ func webhookHandler(c *gin.Context) {
 	sendToPokeAlarm(data)
 
 	var encounters []EncounterData
-	if err := json.Unmarshal(data, &encounters); err != nil {
+
+	var webhookdata []WebhookData
+	if err := json.Unmarshal(data, &webhookdata); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
 		return
 	}
 
 	currentTime := int(time.Now().Unix())
-	for i := range encounters {
-		if encounters[i].SpawnIDString != "" {
-			spawnID, err := strconv.ParseInt(encounters[i].SpawnIDString, 16, 64)
+	for i := range webhookdata {
+		if webhookdata[i].messageType != "pokemon" {
+			continue
+		}
+		encounter := webhookdata[i].message
+		if encounter.SpawnIDString != "" {
+			spawnID, err := strconv.ParseInt(encounter.SpawnIDString, 16, 64)
 			if err == nil {
-				encounters[i].SpawnID = &spawnID
+				encounter.SpawnID = &spawnID
 			} else {
-				log.Printf("Failed to convert spawnID %s: %v", encounters[i].SpawnIDString, err)
+				log.Printf("Failed to convert spawnID %s: %v", encounter.SpawnIDString, err)
 			}
 		}
 
-		encounters[i].Updated = &currentTime
+		encounter.Updated = &currentTime
 
-		if encounters[i].AtkIV != nil && encounters[i].DefIV != nil && encounters[i].StaIV != nil {
-			iv := float32((*encounters[i].AtkIV+*encounters[i].DefIV+*encounters[i].StaIV)*100) / 45.0
-			encounters[i].IV = &iv
+		if encounter.AtkIV != nil && encounter.DefIV != nil && encounter.StaIV != nil {
+			iv := float32((*encounter.AtkIV+*encounter.DefIV+*encounter.StaIV)*100) / 45.0
+			encounter.IV = &iv
 		}
+		encounters = append(encounters, encounter)
 	}
 
 	select {
