@@ -1,5 +1,5 @@
 # 🏗 Stage 1: Build the Go binary
-FROM golang:1.23 AS builder
+FROM golang:1.25.5-alpine AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,8 @@ RUN go mod download
 COPY main.go ./
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o webhook main.go
+# Use -ldflags to strip debug info and reduce memory footprint
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o webhook main.go
 
 # 🏗 Stage 2: Create a minimal runtime environment
 FROM alpine:latest
